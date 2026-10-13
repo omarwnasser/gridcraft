@@ -1166,6 +1166,9 @@ pub(crate) fn paint_quadrant(
         if text.is_empty() {
             continue;
         }
+        if crate::bidi::has_arabic(&text) {
+            text = crate::bidi::shape_arabic(&text);
+        }
         let color = ncolor.unwrap_or(lk.text_color);
         let halign = match st.align.h {
             HAlign::General => match v {

@@ -105,7 +105,8 @@ pub fn sheet_tabs(app: &mut SheetApp, ui: &mut Ui) {
                             for (i, name, color, active) in sheets {
                                 let renaming = app.grid.renaming_tab == Some(i);
                                 let font = if active { theme::ui_bold(13.0) } else { theme::ui_font(13.0) };
-                                let tw = ui.painter().layout_no_wrap(name.clone(), font.clone(), t.text).size().x;
+                                let display_name = if crate::bidi::has_arabic(&name) { crate::bidi::shape_arabic(&name) } else { name.clone() };
+                                let tw = ui.painter().layout_no_wrap(display_name.clone(), font.clone(), t.text).size().x;
                                 let w = (tw + 32.0).max(72.0);
                                 let (r, resp) = ui.allocate_exact_size(vec2(w, 30.0), Sense::click_and_drag());
                                 if active && reveal_active {
@@ -146,7 +147,7 @@ pub fn sheet_tabs(app: &mut SheetApp, ui: &mut Ui) {
                                         app.grid.renaming_tab = None;
                                     }
                                 } else {
-                                    ui.painter().text(r.center(), Align2::CENTER_CENTER, &name, font, if active { t.accent } else { t.text });
+                                    ui.painter().text(r.center(), Align2::CENTER_CENTER, &display_name, font, if active { t.accent } else { t.text });
                                 }
                                 if resp.clicked() {
                                     activate_sheet(app, i);
@@ -168,42 +169,43 @@ pub fn sheet_tabs(app: &mut SheetApp, ui: &mut Ui) {
                                 }
                                 resp.context_menu(|ui| {
                                     ui.set_min_width(180.0);
-                                    if ui.button("Insert Sheet").clicked() {
+                                    let lang = app.ui.language;
+                                    if ui.button(lang.tr("Insert Sheet")).clicked() {
                                         app.run_or_alert("home.insertSheet", json!({"before": i}));
                                     }
-                                    if ui.button("Delete").clicked() {
+                                    if ui.button(lang.tr("Delete")).clicked() {
                                         app.run_or_alert("home.deleteSheet", json!({"sheet": i}));
                                     }
-                                    if ui.button("Rename").clicked() {
+                                    if ui.button(lang.tr("Rename")).clicked() {
                                         app.grid.renaming_tab = Some(i);
                                         app.grid.rename_text = name.clone();
                                     }
-                                    if ui.button("Move or Copy…").clicked() {
+                                    if ui.button(lang.tr("Move or Copy…")).clicked() {
                                         app.open_dialog("moveSheet", json!({"sheet": i}));
                                     }
-                                    if ui.button("Duplicate").clicked() {
+                                    if ui.button(lang.tr("Duplicate")).clicked() {
                                         app.run_or_alert("sheet.move", json!({"sheet": i, "to": i + 1, "copy": true}));
                                     }
-                                    ui.menu_button("Tab Color", |ui| {
+                                    ui.menu_button(lang.tr("Tab Color"), |ui| {
                                         let colors = app.session.active().map(|d| d.wb.theme.colors).unwrap_or_default();
-                                        if let Some(c) = crate::widgets::color_palette(ui, &colors, "No Color") {
+                                        if let Some(c) = crate::widgets::color_palette(ui, &colors, lang.tr("No Color")) {
                                             app.run_or_alert("sheet.tabColor", json!({"sheet": i, "color": c}));
                                             ui.close();
                                         }
                                     });
                                     ui.separator();
-                                    if ui.button("Hide").clicked() {
+                                    if ui.button(lang.tr("Hide")).clicked() {
                                         app.run_or_alert("sheet.hide", json!({"sheet": i}));
                                     }
-                                    if ui.button("Unhide…").clicked() {
+                                    if ui.button(lang.tr("Unhide…")).clicked() {
                                         app.run_or_alert("sheet.unhide", json!({}));
                                     }
                                     ui.separator();
                                     let protected = app.session.active().and_then(|d| d.wb.active().map(|s| s.is_protected())).unwrap_or(false);
-                                    if ui.button(if protected { "Unprotect Sheet…" } else { "Protect Sheet…" }).clicked() {
+                                    if ui.button(if protected { lang.tr("Unprotect Sheet…") } else { lang.tr("Protect Sheet…") }).clicked() {
                                         app.open_dialog(if protected { "unprotectSheet" } else { "protectSheet" }, json!({}));
                                     }
-                                    if ui.button("Select All Sheets").clicked() {
+                                    if ui.button(lang.tr("Select All Sheets")).clicked() {
                                         ui.close();
                                     }
                                 });
@@ -318,17 +320,19 @@ pub fn status_bar(app: &mut SheetApp, ui: &mut Ui) {
                                 .to_string()
                         };
                         let mut parts = Vec::new();
+                        let lang = app.ui.language;
                         if st.numeric > 0 {
-                            parts.push(format!("Sum: {}", fmt(st.sum)));
+                            parts.push(format!("{}: {}", lang.tr("Sum"), fmt(st.sum)));
                         }
                         if st.count > 0 {
-                            parts.push(format!("Count: {}", st.count));
+                            parts.push(format!("{}: {}", lang.tr("Count"), st.count));
                         }
                         if let Some(a) = st.average {
-                            parts.push(format!("Average: {}", fmt(a)));
+                            parts.push(format!("{}: {}", lang.tr("Average"), fmt(a)));
                         }
                         for p in parts {
-                            ui.label(egui::RichText::new(p).font(theme::ui_font(12.5)).color(t.text_dim));
+                            let shaped = if crate::bidi::has_arabic(&p) { crate::bidi::shape_arabic(&p) } else { p };
+                            ui.label(egui::RichText::new(shaped).font(theme::ui_font(12.5)).color(t.text_dim));
                             ui.add_space(10.0);
                         }
                     }

@@ -7,6 +7,7 @@
 #![forbid(unsafe_code)]
 
 pub mod backstage;
+pub mod bidi;
 mod border_preview;
 mod cell_pictures;
 pub mod chartview;
@@ -263,6 +264,8 @@ pub struct SheetApp {
     /// holding other text. Once the cut has been pasted, Paste leaves this text alone.
     cut_text: Option<String>,
     pub started: f64,
+    was_focused: bool,
+    was_minimized: bool,
 }
 
 impl SheetApp {
@@ -306,7 +309,17 @@ impl SheetApp {
             clipboard_text_at_copy: None,
             cut_text: None,
             started: now_ms(),
+            was_focused: true,
+            was_minimized: false,
         }
+    }
+
+    /// Refreshes the graphics surface, font texture atlas, and redraws the page when the application window is restored.
+    pub fn on_window_restored(&mut self, ctx: &egui::Context) {
+        self.fonts_ready = false;
+        self.fonts_set = false;
+        ctx.forget_all_images();
+        ctx.request_repaint();
     }
 
     /// One-time context setup: start cataloging the machine's fonts, then install the fonts and
@@ -631,7 +644,9 @@ impl SheetApp {
                         self.ui.language = l;
                         Ok(json!({"language": l}))
                     }
-                    None => Err(format!("unknown language {code:?} (use \"en\", \"es\", \"zh\", \"ja\", \"ko\", \"ru\", \"pt\" or \"cs\")")),
+                    None => Err(format!(
+                        "unknown language {code:?} (use \"en\", \"es\", \"zh\", \"ja\", \"ko\", \"ru\", \"pt\", \"de\", \"cs\", \"fr\", \"sr\" or \"ar\")"
+                    )),
                 }
             }
             "app.language.english" => {
@@ -641,6 +656,10 @@ impl SheetApp {
             "app.language.japanese" => {
                 self.ui.language = i18n::Language::Ja;
                 Ok(json!({"language": i18n::Language::Ja}))
+            }
+            "app.language.arabic" => {
+                self.ui.language = i18n::Language::Ar;
+                Ok(json!({"language": i18n::Language::Ar}))
             }
             "ui.backstage" => {
                 // `{"page": "info"}` opens File › Info; `{"page": "close"}` returns to the sheet.
@@ -993,6 +1012,13 @@ impl SheetApp {
         // A keytip control request lives one frame: the ribbon consumes it during `ui`, and
         // anything that never reached a control (collapsed ribbon, tab switch) is dropped.
         self.ui.keytip_invoke = None;
+        let focused = ctx.input(|i| i.focused);
+        let minimized = ctx.input(|i| i.viewport().minimized.unwrap_or(false));
+        if (!self.was_focused && focused) || (self.was_minimized && !minimized) {
+            self.on_window_restored(ctx);
+        }
+        self.was_focused = focused;
+        self.was_minimized = minimized;
         if self.fonts_han.is_some_and(|han| han != theme::HanOrder::of(self.ui.language)) {
             self.fonts_ready = false;
             self.fonts_set = false;
@@ -1085,6 +1111,12 @@ impl SheetApp {
     }
 
     pub fn raw_input_hook(&mut self, raw: &mut egui::RawInput) {
+        for event in &raw.events {
+            if let egui::Event::WindowFocused(true) = event {
+                self.fonts_ready = false;
+                self.fonts_set = false;
+            }
+        }
         if let Some(mut batch) = self.synthetic.pop_front() {
             raw.events.append(&mut batch);
         }
