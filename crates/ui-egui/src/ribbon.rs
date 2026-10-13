@@ -173,7 +173,12 @@ pub fn show(app: &mut SheetApp, ui: &mut Ui) {
             // Tabs row.
             let tabs_rect = Rect::from_min_size(ui.cursor().min, vec2(ui.available_width(), 32.0));
             ui.scope_builder(egui::UiBuilder::new().max_rect(tabs_rect), |ui| {
-                ui.horizontal(|ui| {
+                let layout = if app.ui.language == crate::i18n::Language::Ar {
+                    egui::Layout::right_to_left(egui::Align::Center)
+                } else {
+                    egui::Layout::left_to_right(egui::Align::Center)
+                };
+                ui.with_layout(layout, |ui| {
                     ui.spacing_mut().item_spacing.x = 2.0;
                     ui.add_space(8.0);
                     file_menu(app, ui);
@@ -2146,6 +2151,11 @@ fn view(app: &mut SheetApp, ui: &mut Ui) {
         control_keytip(app, ui, &resp, "view.headings");
         if resp.changed() {
             act(app, "view.headings", json!({"on": h}));
+        }
+        let rtl = app.session.active().and_then(|d| d.wb.active().map(|s| s.right_to_left)).unwrap_or(false);
+        let mut r = rtl;
+        if ui.checkbox(&mut r, lang.tr("Sheet Right-to-Left")).changed() {
+            act(app, "view.rightToLeft", json!({"on": r}));
         }
     });
     sep(ui);

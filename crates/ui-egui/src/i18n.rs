@@ -6,9 +6,9 @@
 //!
 //! CJK fonts stay system-provided: [`crate::theme`] appends available CJK faces to every family so
 //! Japanese, Chinese and Korean labels and workbook text can render without bundling font files.
-
 use serde::{Deserialize, Serialize};
 
+mod ar;
 mod cs;
 mod de;
 mod es;
@@ -35,10 +35,12 @@ pub enum Language {
     Cs,
     Fr,
     Sr,
+    Ar,
 }
 
 impl Language {
-    pub const ALL: [Self; 11] = [Self::En, Self::Es, Self::Zh, Self::Ja, Self::Ko, Self::Ru, Self::PtBr, Self::De, Self::Cs, Self::Fr, Self::Sr];
+    pub const ALL: [Self; 12] =
+        [Self::En, Self::Es, Self::Zh, Self::Ja, Self::Ko, Self::Ru, Self::PtBr, Self::De, Self::Cs, Self::Fr, Self::Sr, Self::Ar];
 
     /// The language's own name, shown in the switcher.
     pub fn name(self) -> &'static str {
@@ -54,6 +56,7 @@ impl Language {
             Self::Cs => "Čeština",
             Self::Fr => "Français",
             Self::Sr => "Srpski",
+            Self::Ar => "العربية",
         }
     }
 
@@ -71,6 +74,7 @@ impl Language {
             Self::Cs => "cs",
             Self::Fr => "fr",
             Self::Sr => "sr",
+            Self::Ar => "ar",
         }
     }
 
@@ -91,6 +95,7 @@ impl Language {
             "cs" => Some(Self::Cs),
             "fr" => Some(Self::Fr),
             "sr" => Some(Self::Sr),
+            "ar" => Some(Self::Ar),
             _ => None,
         }
     }
@@ -129,6 +134,7 @@ impl Language {
             Self::Cs => cs::translate(text),
             Self::Fr => fr::translate(text),
             Self::Sr => sr::translate(text),
+            Self::Ar => ar::translate(text),
         };
         translated.unwrap_or_else(|| text.rsplit_once('|').map_or(text, |(_, label)| label))
     }
@@ -611,6 +617,7 @@ mod tests {
             assert!(cs::translate(english).is_some_and(|text| !text.is_empty()), "missing Czech: {english}");
             assert!(fr::translate(english).is_some_and(|text| !text.is_empty()), "missing French: {english}");
             assert!(sr::translate(english).is_some_and(|text| !text.is_empty()), "missing Serbian: {english}");
+            assert!(ar::translate(english).is_some_and(|text| !text.is_empty()), "missing Arabic: {english}");
         }
         assert_eq!(Language::Ja.tr("Data"), "データ");
         assert_eq!(Language::Zh.tr("Data"), "数据");
@@ -624,6 +631,7 @@ mod tests {
         assert_eq!(Language::De.tr("Sheet1!A1"), "Sheet1!A1");
         assert_eq!(Language::Fr.tr("Data"), "Données");
         assert_eq!(Language::Fr.tr("Sheet1!A1"), "Sheet1!A1");
+        assert_eq!(Language::Ar.tr("Data"), ar::translate("Data").unwrap());
         assert_eq!(Language::PtBr.tr("Date"), "Data");
         assert_eq!(Language::PtBr.tr("Sheet1!A1"), "Sheet1!A1");
         assert_eq!(Language::Ja.tr("Sheet1!A1"), "Sheet1!A1");
@@ -634,6 +642,7 @@ mod tests {
         assert_eq!(Language::Cs.tr("Data"), "Data");
         assert_eq!(Language::Cs.tr("Formulas"), "Vzorce");
         assert_eq!(Language::Cs.tr("Sheet1!A1"), "Sheet1!A1");
+        assert_eq!(Language::Ar.tr("Sheet1!A1"), "Sheet1!A1");
         // A `context|label` key shows only its label in English and splits the translation.
         assert_eq!(Language::En.tr("Page Layout|Orientation"), "Orientation");
         assert_eq!(Language::Ja.tr("Page Layout|Orientation"), "印刷の向き");

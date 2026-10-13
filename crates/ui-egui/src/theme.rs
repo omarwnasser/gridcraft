@@ -492,6 +492,7 @@ fn fallback_faces(han: HanOrder) -> Vec<(&'static str, Vec<(String, u32)>)> {
         ("sys-cjk-hangul", cjk_hangul()),
         ("sys-thai", thai()),
         ("sys-hebrew", hebrew()),
+        ("sys-arabic", arabic()),
         ("sys-symbols", symbols()),
         ("sys-symbols-2", symbols_more()),
     ]
@@ -663,6 +664,31 @@ fn symbols_more() -> Vec<(String, u32)> {
     v
 }
 
+/// Arabic faces. Windows has Segoe UI, Tahoma, Arial; macOS has Geeza Pro, Arial, SF Arabic;
+/// Linux usually has Noto Sans Arabic, Noto Naskh Arabic, DejaVu Sans.
+#[cfg(not(target_arch = "wasm32"))]
+fn arabic() -> Vec<(String, u32)> {
+    let mac_sys = "/System/Library/Fonts";
+    let mac_sup = "/System/Library/Fonts/Supplemental";
+    let win = std::env::var("WINDIR").map(|w| format!("{w}\\Fonts")).unwrap_or_else(|_| "C:\\Windows\\Fonts".into());
+    let lin = ["/usr/share/fonts/truetype/noto", "/usr/share/fonts/opentype/noto", "/usr/share/fonts/truetype", "/usr/share/fonts"];
+    let mut v: Vec<(String, u32)> = Vec::new();
+    v.push((format!("{win}\\segoeui.ttf"), 0));
+    v.push((format!("{win}\\tahoma.ttf"), 0));
+    v.push((format!("{win}\\arial.ttf"), 0));
+    v.push((format!("{mac_sys}/GeezaPro.ttc"), 0));
+    v.push((format!("{mac_sup}/Arial.ttf"), 0));
+    v.push((format!("{mac_sup}/DecoTypeNaskh.ttc"), 0));
+    for d in lin {
+        v.push((format!("{d}/NotoSansArabic-Regular.ttf"), 0));
+        v.push((format!("{d}/NotoSansArabicUI-Regular.ttf"), 0));
+        v.push((format!("{d}/NotoNaskhArabic-Regular.ttf"), 0));
+        v.push((format!("{d}/NotoNaskhArabicUI-Regular.ttf"), 0));
+        v.push((format!("{d}/dejavu/DejaVuSans.ttf"), 0));
+    }
+    v
+}
+
 /// Whether any symbol fallback face is installed (tests skip their glyph checks without one).
 pub fn symbol_face_installed() -> bool {
     #[cfg(not(target_arch = "wasm32"))]
@@ -674,7 +700,6 @@ pub fn symbol_face_installed() -> bool {
         false
     }
 }
-
 pub fn apply(ctx: &egui::Context, dark: bool) {
     // Install both palettes before System can switch between the style slots.
     for theme in [egui::Theme::Light, egui::Theme::Dark] {
@@ -812,17 +837,16 @@ mod tests {
 
     #[test]
     fn language_reorders_only_the_han_faces() {
-        let keys = |han| fallback_faces(han).into_iter().map(|(k, _)| k).collect::<Vec<_>>();
         assert_eq!(
             keys(HanOrder::Japanese),
-            ["sys-cjk-han-ja", "sys-cjk-han-zh", "sys-cjk-hangul", "sys-thai", "sys-hebrew", "sys-symbols", "sys-symbols-2"]
+            ["sys-cjk-han-ja", "sys-cjk-han-zh", "sys-cjk-hangul", "sys-thai", "sys-hebrew", "sys-arabic", "sys-symbols", "sys-symbols-2"]
         );
         assert_eq!(
             keys(HanOrder::Chinese),
-            ["sys-cjk-han-zh", "sys-cjk-han-ja", "sys-cjk-hangul", "sys-thai", "sys-hebrew", "sys-symbols", "sys-symbols-2"]
+            ["sys-cjk-han-zh", "sys-cjk-han-ja", "sys-cjk-hangul", "sys-thai", "sys-hebrew", "sys-arabic", "sys-symbols", "sys-symbols-2"]
         );
         assert_eq!(HanOrder::of(Language::Ja), HanOrder::Japanese);
-        for l in [Language::En, Language::Zh, Language::Ko, Language::Ru, Language::PtBr, Language::De, Language::Cs] {
+        for l in [Language::En, Language::Es, Language::Zh, Language::Ko, Language::Ru, Language::PtBr, Language::De, Language::Cs, Language::Ar] {
             assert_eq!(HanOrder::of(l), HanOrder::Chinese, "{l:?} shares the default order (no font rebuild)");
         }
     }
@@ -854,6 +878,7 @@ mod tests {
             ("sys-cjk-hangul", cjk_hangul(), "한글"),
             ("sys-thai", thai(), "ทดสอบ"),
             ("sys-hebrew", hebrew(), "עברית"),
+            ("sys-arabic", arabic(), "العربية"),
             ("ui", candidates(UI), "Русский"),
             // Czech interface labels: every Czech accented letter, in both cases.
             ("ui", candidates(UI), "Příliš žluťoučký kůň úpěl ďábelské ódy ŘŠČŽÝÁÍÉÚŮĚŤĎŇÓ"),
