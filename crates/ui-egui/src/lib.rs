@@ -642,6 +642,15 @@ impl SheetApp {
                 match i18n::Language::parse(code) {
                     Some(l) => {
                         self.ui.language = l;
+                        if l == i18n::Language::Ar {
+                            if let Some(doc) = self.session.active_mut() {
+                                let wb = std::sync::Arc::make_mut(&mut doc.wb);
+                                for sh in &mut wb.sheets {
+                                    let sh_mut = std::sync::Arc::make_mut(sh);
+                                    sh_mut.right_to_left = true;
+                                }
+                            }
+                        }
                         Ok(json!({"language": l}))
                     }
                     None => Err(format!(
@@ -659,6 +668,13 @@ impl SheetApp {
             }
             "app.language.arabic" => {
                 self.ui.language = i18n::Language::Ar;
+                if let Some(doc) = self.session.active_mut() {
+                    let wb = std::sync::Arc::make_mut(&mut doc.wb);
+                    for sh in &mut wb.sheets {
+                        let sh_mut = std::sync::Arc::make_mut(sh);
+                        sh_mut.right_to_left = true;
+                    }
+                }
                 Ok(json!({"language": i18n::Language::Ar}))
             }
             "ui.backstage" => {
@@ -1107,6 +1123,15 @@ impl SheetApp {
         }
         if self.session.active().is_none() {
             self.session.new_workbook();
+            if self.ui.language == i18n::Language::Ar {
+                if let Some(doc) = self.session.active_mut() {
+                    let wb = std::sync::Arc::make_mut(&mut doc.wb);
+                    for sh in &mut wb.sheets {
+                        let sh_mut = std::sync::Arc::make_mut(sh);
+                        sh_mut.right_to_left = true;
+                    }
+                }
+            }
         }
     }
 

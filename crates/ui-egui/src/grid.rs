@@ -1172,10 +1172,11 @@ pub(crate) fn paint_quadrant(
         let color = ncolor.unwrap_or(lk.text_color);
         let halign = match st.align.h {
             HAlign::General => match v {
-                Value::Number(_) => HAlign::Right,
+                Value::Number(_) => if geo.rtl { HAlign::Left } else { HAlign::Right },
                 Value::Bool(_) | Value::Error(_) => HAlign::Center,
-                _ if numeric => HAlign::Right,
-                _ => HAlign::Left,
+                _ if numeric => if geo.rtl { HAlign::Left } else { HAlign::Right },
+                _ if crate::bidi::has_arabic(&text) => if geo.rtl { HAlign::Left } else { HAlign::Right },
+                _ => if geo.rtl { HAlign::Right } else { HAlign::Left },
             },
             h => h,
         };

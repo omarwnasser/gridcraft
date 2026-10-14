@@ -680,11 +680,11 @@ fn arabic() -> Vec<(String, u32)> {
     v.push((format!("{mac_sup}/Arial.ttf"), 0));
     v.push((format!("{mac_sup}/DecoTypeNaskh.ttc"), 0));
     for d in lin {
+        v.push((format!("{d}/dejavu/DejaVuSans.ttf"), 0));
         v.push((format!("{d}/NotoSansArabic-Regular.ttf"), 0));
         v.push((format!("{d}/NotoSansArabicUI-Regular.ttf"), 0));
         v.push((format!("{d}/NotoNaskhArabic-Regular.ttf"), 0));
         v.push((format!("{d}/NotoNaskhArabicUI-Regular.ttf"), 0));
-        v.push((format!("{d}/dejavu/DejaVuSans.ttf"), 0));
     }
     v
 }

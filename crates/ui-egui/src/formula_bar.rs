@@ -45,8 +45,9 @@ pub fn show(app: &mut SheetApp, ui: &mut egui::Ui) {
                 } else {
                     // Show the active cell's content; clicking starts editing in the bar.
                     let text = active_input(app);
+                    let display_text = if crate::bidi::has_arabic(&text) { crate::bidi::shape_arabic(&text) } else { text };
                     let resp = child
-                        .add(egui::Label::new(egui::RichText::new(text).font(theme::ui_font(13.0)).color(t.text)).truncate().sense(Sense::click()));
+                        .add(egui::Label::new(egui::RichText::new(display_text).font(theme::ui_font(13.0)).color(t.text)).truncate().sense(Sense::click()));
                     let click = child.interact(field, id.with("click"), Sense::click());
                     if resp.clicked() || click.clicked() {
                         app.begin_edit(None, true);
@@ -263,6 +264,11 @@ pub fn editor_widget(app: &mut SheetApp, ui: &mut egui::Ui, id: egui::Id, font: 
     let font2 = font.clone();
     let mut layouter = move |ui: &egui::Ui, buf: &dyn egui::TextBuffer, wrap_width: f32| {
         let s = buf.as_str();
+        if !s.is_empty() && refs.is_empty() && crate::bidi::has_arabic(s) {
+            let shaped = crate::bidi::shape_arabic(s);
+            let job = egui::text::LayoutJob::simple(shaped, font2.clone(), cell_text_color, if multiline { wrap_width } else { f32::INFINITY });
+            return ui.fonts_mut(|f| f.layout_job(job));
+        }
         let mut job = egui::text::LayoutJob::default();
         let mut pos = 0usize;
         let mut spans: Vec<(usize, usize, usize)> = refs.iter().filter(|r| r.1 <= s.len()).map(|r| (r.0, r.1, r.4)).collect();

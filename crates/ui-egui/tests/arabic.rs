@@ -54,12 +54,12 @@ fn right_to_left_sheet_layout() {
     let geo = Geo::new(sh, rect, scroll);
     assert!(geo.rtl);
 
-    let col0 = geo.cell_rect(sh, CellRef::new(0, 0));
-    let col1 = geo.cell_rect(sh, CellRef::new(0, 1));
+    let col0 = geo.screen_cell_rect(sh, CellRef::new(0, 0));
+    let col1 = geo.screen_cell_rect(sh, CellRef::new(0, 1));
 
     // In RTL, column 0 is to the right of column 1
     assert!(col0.min.x > col1.min.x);
-    assert!((col0.max.x - geo.cells.right()).abs() < 1e-3);
+    assert!((col0.max.x - geo.mirror_x(geo.cells.left())).abs() < 1e-3);
 }
 
 #[test]
