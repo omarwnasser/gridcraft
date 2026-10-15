@@ -407,6 +407,17 @@ impl SheetApp {
         {
             self.deliver_pdf(r);
         }
+        if self.ui.language == i18n::Language::Ar
+            && r.is_ok()
+            && matches!(id, "file.new" | "home.insertSheet" | "sheet.insert" | "sheet.add")
+            && let Some(doc) = self.session.active_mut()
+        {
+            let wb = std::sync::Arc::make_mut(&mut doc.wb);
+            if let Some(sh) = wb.sheets.get_mut(wb.active_sheet) {
+                let sh_mut = std::sync::Arc::make_mut(sh);
+                sh_mut.right_to_left = true;
+            }
+        }
         r
     }
 
@@ -642,13 +653,13 @@ impl SheetApp {
                 match i18n::Language::parse(code) {
                     Some(l) => {
                         self.ui.language = l;
-                        if l == i18n::Language::Ar {
-                            if let Some(doc) = self.session.active_mut() {
-                                let wb = std::sync::Arc::make_mut(&mut doc.wb);
-                                for sh in &mut wb.sheets {
-                                    let sh_mut = std::sync::Arc::make_mut(sh);
-                                    sh_mut.right_to_left = true;
-                                }
+                        if l == i18n::Language::Ar
+                            && let Some(doc) = self.session.active_mut()
+                        {
+                            let wb = std::sync::Arc::make_mut(&mut doc.wb);
+                            for sh in &mut wb.sheets {
+                                let sh_mut = std::sync::Arc::make_mut(sh);
+                                sh_mut.right_to_left = true;
                             }
                         }
                         Ok(json!({"language": l}))
@@ -1123,14 +1134,26 @@ impl SheetApp {
         }
         if self.session.active().is_none() {
             self.session.new_workbook();
-            if self.ui.language == i18n::Language::Ar {
-                if let Some(doc) = self.session.active_mut() {
-                    let wb = std::sync::Arc::make_mut(&mut doc.wb);
-                    for sh in &mut wb.sheets {
-                        let sh_mut = std::sync::Arc::make_mut(sh);
-                        sh_mut.right_to_left = true;
-                    }
+            if self.ui.language == i18n::Language::Ar
+                && let Some(doc) = self.session.active_mut()
+            {
+                let wb = std::sync::Arc::make_mut(&mut doc.wb);
+                for sh in &mut wb.sheets {
+                    let sh_mut = std::sync::Arc::make_mut(sh);
+                    sh_mut.right_to_left = true;
                 }
+            }
+        } else if self.ui.language == i18n::Language::Ar
+            && let Some(doc) = self.session.active_mut()
+            && doc.path.is_none()
+            && doc.wb.sheets.len() == 1
+            && !doc.wb.sheets[0].right_to_left
+            && doc.wb.sheets[0].cells.is_empty()
+        {
+            let wb = std::sync::Arc::make_mut(&mut doc.wb);
+            if let Some(sh) = wb.sheets.get_mut(0) {
+                let sh_mut = std::sync::Arc::make_mut(sh);
+                sh_mut.right_to_left = true;
             }
         }
     }

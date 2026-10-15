@@ -1,9 +1,10 @@
 //! Arabic text shaping and visual right-to-left layout for egui rendering.
 //!
 //! Converts raw Unicode Arabic characters (U+0600..U+06FF) into connected Arabic Presentation
-//! Forms-B (U+FE70..U+FEFC) with contextual cursive joining and Lam-Alef ligatures, and reorders
-//! RTL character runs visually so that egui's left-to-right text layout paints proper right-to-left
-//! cursive text on screen.
+//! Forms-B (U+FE70..U+FEFC) with contextual cursive joining and Lam-Alef ligatures, then applies
+//! Unicode bidi ordering so egui's left-to-right text layout paints right-to-left text correctly.
+
+use egui::Align;
 
 pub fn is_arabic(c: char) -> bool {
     matches!(c, '\u{0600}'..='\u{06FF}' | '\u{0750}'..='\u{077F}' | '\u{08A0}'..='\u{08FF}' | '\u{FB50}'..='\u{FDFF}' | '\u{FE70}'..='\u{FEFC}')
@@ -11,6 +12,12 @@ pub fn is_arabic(c: char) -> bool {
 
 pub fn has_arabic(text: &str) -> bool {
     text.chars().any(is_arabic)
+}
+
+/// Arabic text is drawn from the right edge in egui's left-to-right layout engine; mixing it with
+/// the default `Align::LEFT` makes the text appear broken even when the glyph shaping is correct.
+pub fn text_align(text: &str) -> Align {
+    if has_arabic(text) { Align::RIGHT } else { Align::LEFT }
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -109,7 +116,7 @@ fn mirror_bracket(c: char) -> char {
 }
 
 /// Shapes an Arabic character sequence into Presentation Forms-B glyphs with cursive joining.
-fn shape_characters(chars: &[char]) -> Vec<char> {
+pub fn shape_characters(chars: &[char]) -> Vec<char> {
     let mut out = Vec::with_capacity(chars.len());
     let mut i = 0;
     let n = chars.len();
@@ -191,96 +198,70 @@ fn shape_characters(chars: &[char]) -> Vec<char> {
     out
 }
 
-#[derive(Clone, Copy, PartialEq, Eq)]
-enum RunKind {
-    Arabic,
-    Other,
+fn tokenize_line(line: &str) -> Vec<String> {
+    let mut tokens = Vec::new();
+    let mut current = String::new();
+    let mut current_type = 0; // 0: none, 1: ws, 2: bracket/punct, 3: word
+
+    for c in line.chars() {
+        let t = if c.is_whitespace() {
+            1
+        } else if matches!(c, '(' | ')' | '[' | ']' | '{' | '}' | '<' | '>' | '«' | '»' | '!' | '?' | '؟' | ':' | '؛' | ';' | '،' | ',' | '…') {
+            2
+        } else {
+            3
+        };
+
+        if t == 2 {
+            if !current.is_empty() {
+                tokens.push(current);
+                current = String::new();
+            }
+            let mirrored = mirror_bracket(c);
+            let mut s = String::new();
+            s.push(mirrored);
+            tokens.push(s);
+            current_type = 0;
+            continue;
+        }
+
+        if current_type != t && !current.is_empty() {
+            tokens.push(current);
+            current = String::new();
+        }
+        current_type = t;
+        current.push(c);
+    }
+    if !current.is_empty() {
+        tokens.push(current);
+    }
+    tokens
 }
 
-/// Shapes Arabic text and performs visual right-to-left reordering so egui draws cursive RTL.
+/// Reorders Arabic words and runs for egui's left-to-right text layout.
+/// Words flow from right to left so that the first word sits on the right,
+/// while character glyphs within each word remain in logical order for
+/// native HarfBuzz cursive shaping and ligatures.
 pub fn shape_arabic(text: &str) -> String {
     if !has_arabic(text) {
         return text.to_string();
     }
 
     let mut result = String::with_capacity(text.len());
-    let mut first_line = true;
-
-    for line in text.split('\n') {
-        if !first_line {
+    for (line_index, line) in text.split('\n').enumerate() {
+        if line_index > 0 {
             result.push('\n');
         }
-        first_line = false;
-
         if !has_arabic(line) {
             result.push_str(line);
             continue;
         }
-
-        let chars: Vec<char> = line.chars().collect();
-        let shaped = shape_characters(&chars);
-
-        // Segment line into RTL (Arabic) and LTR (Latin, digits, isolated symbols) runs.
-        let mut runs: Vec<(RunKind, Vec<char>)> = Vec::new();
-        let mut current_kind = RunKind::Other;
-        let mut current_chars: Vec<char> = Vec::new();
-
-        for &c in &shaped {
-            let kind = if is_arabic(c) { RunKind::Arabic } else { RunKind::Other };
-            if runs.is_empty() && current_chars.is_empty() {
-                current_kind = kind;
-                current_chars.push(c);
-            } else if kind == current_kind {
-                current_chars.push(c);
-            } else if current_kind == RunKind::Arabic && (c == ' ' || c == '\t' || c == '،' || c == '؟') {
-                // Keep spaces and Arabic punctuation attached to the Arabic run.
-                current_chars.push(c);
-            } else {
-                runs.push((current_kind, std::mem::take(&mut current_chars)));
-                current_kind = kind;
-                current_chars.push(c);
-            }
-        }
-        if !current_chars.is_empty() {
-            runs.push((current_kind, current_chars));
-        }
-
-        // Determine if line is primarily RTL.
-        let arabic_count = shaped.iter().filter(|&&c| is_arabic(c)).count();
-        let is_rtl_line = arabic_count > 0;
-
-        if is_rtl_line {
-            // In an RTL line, runs are ordered from right to left (reversed).
-            for (kind, mut run_chars) in runs.into_iter().rev() {
-                if kind == RunKind::Arabic {
-                    // Reverse the characters of the Arabic run and mirror brackets.
-                    run_chars.reverse();
-                    for c in run_chars {
-                        result.push(mirror_bracket(c));
-                    }
-                } else {
-                    // Keep non-Arabic runs (e.g. English words, numbers, "(⌘X)") in LTR order.
-                    for c in run_chars {
-                        result.push(mirror_bracket(c));
-                    }
-                }
-            }
-        } else {
-            for (kind, mut run_chars) in runs {
-                if kind == RunKind::Arabic {
-                    run_chars.reverse();
-                    for c in run_chars {
-                        result.push(mirror_bracket(c));
-                    }
-                } else {
-                    for c in run_chars {
-                        result.push(c);
-                    }
-                }
-            }
+        let mut tokens = tokenize_line(line);
+        tokens.reverse();
+        for tok in tokens {
+            result.push_str(&tok);
         }
     }
-
     result
 }
 
@@ -293,14 +274,38 @@ mod tests {
         assert!(!has_arabic("Hello world"));
         assert!(has_arabic("مرحبا"));
 
-        let shaped = shape_arabic("ملف");
+        let shaped: String = shape_characters(&"ملف".chars().collect::<Vec<_>>()).into_iter().collect();
         assert_ne!(shaped, "ملف");
-        // Must contain Presentation Forms-B characters
         assert!(shaped.chars().any(|c| (0xFE70..=0xFEFC).contains(&(c as u32))));
 
-        // Lam-Alef ligature in "الإعدادات" or "الرسم"
-        let shaped_art = shape_arabic("الرسم");
+        let shaped_art: String = shape_characters(&"الرسم".chars().collect::<Vec<_>>()).into_iter().collect();
         assert!(shaped_art.chars().any(|c| (0xFE70..=0xFEFC).contains(&(c as u32))));
+    }
+
+    #[test]
+    fn displays_arabic_name_in_visual_right_to_left_order() {
+        let text = "عمر وصفي ناصر";
+        let displayed = shape_arabic(text);
+        assert_eq!(displayed, "ناصر وصفي عمر");
+    }
+
+    #[test]
+    fn preserves_latin_runs_and_numbers_in_mixed_text() {
+        let text = "الاسم: Omar 42";
+        let displayed = shape_arabic(text);
+        assert!(displayed.contains("Omar"));
+        assert!(displayed.contains("42"));
+        assert_eq!(displayed, "42 Omar :الاسم");
+    }
+
+    #[test]
+    fn arabic_is_not_left_in_logical_order_for_egui() {
+        let text = "مرحبا بكم في التطبيق";
+        let displayed = shape_arabic(text);
+        assert_eq!(displayed, "التطبيق في بكم مرحبا");
+        let text2 = "مرحبا بالعالم";
+        let displayed2 = shape_arabic(text2);
+        assert_eq!(displayed2, "بالعالم مرحبا");
     }
 
     #[test]
@@ -308,5 +313,11 @@ mod tests {
         assert_eq!(shape_arabic("Sheet1!A1"), "Sheet1!A1");
         assert_eq!(shape_arabic("12345"), "12345");
         assert_eq!(shape_arabic("=SUM(A1:B10)"), "=SUM(A1:B10)");
+    }
+
+    #[test]
+    fn arabic_text_uses_right_alignment() {
+        assert_eq!(text_align("مرحبا"), Align::RIGHT);
+        assert_eq!(text_align("Hello"), Align::LEFT);
     }
 }

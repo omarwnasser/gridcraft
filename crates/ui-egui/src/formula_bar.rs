@@ -46,8 +46,23 @@ pub fn show(app: &mut SheetApp, ui: &mut egui::Ui) {
                     // Show the active cell's content; clicking starts editing in the bar.
                     let text = active_input(app);
                     let display_text = if crate::bidi::has_arabic(&text) { crate::bidi::shape_arabic(&text) } else { text };
-                    let resp = child
-                        .add(egui::Label::new(egui::RichText::new(display_text).font(theme::ui_font(13.0)).color(t.text)).truncate().sense(Sense::click()));
+                    let is_rtl = crate::bidi::has_arabic(&display_text)
+                        || app.session.active().and_then(|d| d.wb.active()).is_some_and(|s| s.right_to_left);
+                    let resp = if is_rtl {
+                        child.with_layout(egui::Layout::right_to_left(egui::Align::Center), |child| {
+                            child.add(
+                                egui::Label::new(egui::RichText::new(display_text).font(theme::ui_font(13.0)).color(t.text))
+                                    .truncate()
+                                    .sense(Sense::click()),
+                            )
+                        }).inner
+                    } else {
+                        child.add(
+                            egui::Label::new(egui::RichText::new(display_text).font(theme::ui_font(13.0)).color(t.text))
+                                .truncate()
+                                .sense(Sense::click()),
+                        )
+                    };
                     let click = child.interact(field, id.with("click"), Sense::click());
                     if resp.clicked() || click.clicked() {
                         app.begin_edit(None, true);
@@ -266,7 +281,9 @@ pub fn editor_widget(app: &mut SheetApp, ui: &mut egui::Ui, id: egui::Id, font: 
         let s = buf.as_str();
         if !s.is_empty() && refs.is_empty() && crate::bidi::has_arabic(s) {
             let shaped = crate::bidi::shape_arabic(s);
-            let job = egui::text::LayoutJob::simple(shaped, font2.clone(), cell_text_color, if multiline { wrap_width } else { f32::INFINITY });
+            let align = crate::bidi::text_align(&shaped);
+            let mut job = egui::text::LayoutJob::simple(shaped, font2.clone(), cell_text_color, if multiline { wrap_width } else { f32::INFINITY });
+            job.halign = align;
             return ui.fonts_mut(|f| f.layout_job(job));
         }
         let mut job = egui::text::LayoutJob::default();
@@ -283,6 +300,9 @@ pub fn editor_widget(app: &mut SheetApp, ui: &mut egui::Ui, id: egui::Id, font: 
         }
         job.append(s.get(pos..).unwrap_or(""), 0.0, egui::TextFormat::simple(font2.clone(), cell_text_color));
         job.wrap.max_width = if multiline { wrap_width } else { f32::INFINITY };
+        if crate::bidi::has_arabic(s) {
+            job.halign = crate::bidi::text_align(s);
+        }
         ui.fonts_mut(|f| f.layout_job(job))
     };
     let edit = if multiline || ed.text.contains('\n') { TextEdit::multiline(&mut ed.text) } else { TextEdit::singleline(&mut ed.text) };

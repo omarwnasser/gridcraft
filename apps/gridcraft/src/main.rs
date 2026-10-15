@@ -124,6 +124,15 @@ fn load_prefs(app: &mut SheetApp) {
     {
         app.session.prefs = p;
     }
+    if app.ui.language == gridcraft_ui_egui::i18n::Language::Ar
+        && let Some(doc) = app.session.active_mut()
+    {
+        let wb = std::sync::Arc::make_mut(&mut doc.wb);
+        for sh in &mut wb.sheets {
+            let sh_mut = std::sync::Arc::make_mut(sh);
+            sh_mut.right_to_left = true;
+        }
+    }
 }
 
 fn save_prefs(app: &SheetApp) {

@@ -1172,13 +1172,29 @@ pub(crate) fn paint_quadrant(
         let color = ncolor.unwrap_or(lk.text_color);
         let halign = match st.align.h {
             HAlign::General => match v {
-                Value::Number(_) => if geo.rtl { HAlign::Left } else { HAlign::Right },
+                Value::Number(_) => HAlign::Right,
                 Value::Bool(_) | Value::Error(_) => HAlign::Center,
-                _ if numeric => if geo.rtl { HAlign::Left } else { HAlign::Right },
-                _ if crate::bidi::has_arabic(&text) => if geo.rtl { HAlign::Left } else { HAlign::Right },
-                _ => if geo.rtl { HAlign::Right } else { HAlign::Left },
+                _ if numeric => HAlign::Right,
+                _ if crate::bidi::has_arabic(&text) => {
+                    if geo.rtl {
+                        HAlign::Left
+                    } else {
+                        HAlign::Right
+                    }
+                }
+                _ => HAlign::Left,
             },
-            h => h,
+            h => {
+                if geo.rtl {
+                    match h {
+                        HAlign::Left => HAlign::Right,
+                        HAlign::Right => HAlign::Left,
+                        other => other,
+                    }
+                } else {
+                    h
+                }
+            }
         };
         let indent = st.align.indent as f32 * 9.0 * z;
         let pad = 2.5 * z;
@@ -1187,10 +1203,14 @@ pub(crate) fn paint_quadrant(
         if !rotated && (st.align.wrap || st.align.h == HAlign::Justify) {
             let wrap_w = (rect.width() - 2.0 * pad - indent).max(4.0);
             let mut job = egui::text::LayoutJob::simple(text.clone(), font.clone(), color, wrap_w);
-            job.halign = match halign {
-                HAlign::Center | HAlign::CenterAcross => egui::Align::Center,
-                HAlign::Right => egui::Align::RIGHT,
-                _ => egui::Align::LEFT,
+            job.halign = if crate::bidi::has_arabic(&text) {
+                crate::bidi::text_align(&text)
+            } else {
+                match halign {
+                    HAlign::Center | HAlign::CenterAcross => egui::Align::Center,
+                    HAlign::Right => egui::Align::RIGHT,
+                    _ => egui::Align::LEFT,
+                }
             };
             let galley = p.layout_job(job);
             let x = match halign {

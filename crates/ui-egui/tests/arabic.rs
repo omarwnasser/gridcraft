@@ -32,9 +32,9 @@ fn arabic_language_switch_translates_ui() {
     h.run_steps(2);
 
     assert_eq!(h.state().ui.language, Language::Ar);
-    assert_eq!(h.state().ui.language.tr("Home"), "ﻲﺴﻴﺋﺮﻟﺍ ﻂﻳﺮﺸﻟﺍ");
-    assert_eq!(h.state().ui.language.tr("File"), "ﻒﻠﻣ");
-    assert_eq!(h.state().ui.language.tr("Sheet Right-to-Left"), "ﺭﺎﺴﻴﻠﻟ ﻦﻴﻤﻴﻟﺍ ﻦﻣ ﺔﻗﺭﻭ");
+    assert_eq!(h.state().ui.language.tr("Home"), "الرئيسية");
+    assert_eq!(h.state().ui.language.tr("File"), "ملف");
+    assert_eq!(h.state().ui.language.tr("Sheet Right-to-Left"), "ورقة من اليمين لليسار");
 }
 
 #[test]
@@ -68,8 +68,13 @@ fn arabic_shaping_and_bidi() {
     assert!(!bidi::has_arabic("Hello World"));
 
     let shaped = bidi::shape_arabic("جدول مبيعات");
-    assert_ne!(shaped, "جدول مبيعات");
-    assert!(shaped.chars().any(|c| (0xFE70..=0xFEFC).contains(&(c as u32))));
+    assert_eq!(shaped, "مبيعات جدول");
+
+    let s_sent = bidi::shape_arabic("مرحبا بكم في التطبيق");
+    assert_eq!(s_sent, "التطبيق في بكم مرحبا");
+
+    let single = bidi::shape_arabic("مرحبا");
+    assert_eq!(single, "مرحبا");
 }
 
 #[test]
@@ -88,3 +93,4 @@ fn window_restore_refreshes_textures_and_repaints() {
     h.state_mut().on_window_restored(&ctx);
     h.run_steps(2);
 }
+
