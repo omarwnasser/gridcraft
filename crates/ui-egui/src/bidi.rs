@@ -1,21 +1,24 @@
-//! Arabic text shaping and visual right-to-left layout for egui rendering.
+//! Arabic script detection, right-to-left alignment helpers, and Presentation Forms-B shaping.
 //!
-//! Converts raw Unicode Arabic characters (U+0600..U+06FF) into connected Arabic Presentation
-//! Forms-B (U+FE70..U+FEFC) with contextual cursive joining and Lam-Alef ligatures, then applies
-//! Unicode bidi ordering so egui's left-to-right text layout paints right-to-left text correctly.
+//! With `epaint` 0.37 (`harfrust` + `unicode-bidi`), `egui` natively reorders right-to-left runs
+//! visually while keeping each glyph's logical character index identical to the source string.
+//! Preserving logical order in [`shape_arabic`] ensures that clicking the first word of an Arabic
+//! sentence (drawn on the right) maps to the first word's character indices rather than the end
+//! of the sentence.
 
 use egui::Align;
 
+/// Returns `true` when `c` belongs to an Arabic Unicode block.
 pub fn is_arabic(c: char) -> bool {
     matches!(c, '\u{0600}'..='\u{06FF}' | '\u{0750}'..='\u{077F}' | '\u{08A0}'..='\u{08FF}' | '\u{FB50}'..='\u{FDFF}' | '\u{FE70}'..='\u{FEFC}')
 }
 
+/// Returns `true` when `text` contains at least one Arabic character.
 pub fn has_arabic(text: &str) -> bool {
     text.chars().any(is_arabic)
 }
 
-/// Arabic text is drawn from the right edge in egui's left-to-right layout engine; mixing it with
-/// the default `Align::LEFT` makes the text appear broken even when the glyph shaping is correct.
+/// Returns `Align::RIGHT` for text containing Arabic, `Align::LEFT` otherwise.
 pub fn text_align(text: &str) -> Align {
     if has_arabic(text) { Align::RIGHT } else { Align::LEFT }
 }
@@ -99,29 +102,12 @@ fn lam_alef(alef: char) -> Option<(char, char)> {
     Some((char::from_u32(iso).unwrap_or(alef), char::from_u32(fin).unwrap_or(alef)))
 }
 
-fn mirror_bracket(c: char) -> char {
-    match c {
-        '(' => ')',
-        ')' => '(',
-        '[' => ']',
-        ']' => '[',
-        '{' => '}',
-        '}' => '{',
-        '<' => '>',
-        '>' => '<',
-        '«' => '»',
-        '»' => '«',
-        _ => c,
-    }
-}
-
 /// Shapes an Arabic character sequence into Presentation Forms-B glyphs with cursive joining.
 pub fn shape_characters(chars: &[char]) -> Vec<char> {
     let mut out = Vec::with_capacity(chars.len());
     let mut i = 0;
     let n = chars.len();
-    while i < n {
-        let c = chars[i];
+    while let Some(&c) = chars.get(i) {
         if joining_type(c) == JoiningType::Transparent {
             out.push(c);
             i += 1;
@@ -133,8 +119,10 @@ pub fn shape_characters(chars: &[char]) -> Vec<char> {
         let mut j = i;
         while j > 0 {
             j -= 1;
-            if joining_type(chars[j]) != JoiningType::Transparent {
-                if joining_type(chars[j]) == JoiningType::DualJoining {
+            if let Some(&prev) = chars.get(j)
+                && joining_type(prev) != JoiningType::Transparent
+            {
+                if joining_type(prev) == JoiningType::DualJoining {
                     prev_joins = true;
                 }
                 break;
@@ -144,11 +132,11 @@ pub fn shape_characters(chars: &[char]) -> Vec<char> {
         // Check Lam-Alef ligature.
         if c == '\u{0644}' {
             let mut k = i + 1;
-            while k < n && joining_type(chars[k]) == JoiningType::Transparent {
+            while k < n && chars.get(k).is_some_and(|&ch| joining_type(ch) == JoiningType::Transparent) {
                 k += 1;
             }
-            if k < n
-                && let Some((iso, fin)) = lam_alef(chars[k])
+            if let Some(&next_ch) = chars.get(k)
+                && let Some((iso, fin)) = lam_alef(next_ch)
             {
                 out.push(if prev_joins { fin } else { iso });
                 i = k + 1;
@@ -159,8 +147,8 @@ pub fn shape_characters(chars: &[char]) -> Vec<char> {
         // Check if next character joins backward.
         let mut next_joins = false;
         let mut k = i + 1;
-        while k < n {
-            let jt = joining_type(chars[k]);
+        while let Some(&next_ch) = chars.get(k) {
+            let jt = joining_type(next_ch);
             if jt != JoiningType::Transparent {
                 if jt == JoiningType::DualJoining || jt == JoiningType::RightJoining {
                     next_joins = true;
@@ -198,71 +186,12 @@ pub fn shape_characters(chars: &[char]) -> Vec<char> {
     out
 }
 
-fn tokenize_line(line: &str) -> Vec<String> {
-    let mut tokens = Vec::new();
-    let mut current = String::new();
-    let mut current_type = 0; // 0: none, 1: ws, 2: bracket/punct, 3: word
-
-    for c in line.chars() {
-        let t = if c.is_whitespace() {
-            1
-        } else if matches!(c, '(' | ')' | '[' | ']' | '{' | '}' | '<' | '>' | '«' | '»' | '!' | '?' | '؟' | ':' | '؛' | ';' | '،' | ',' | '…') {
-            2
-        } else {
-            3
-        };
-
-        if t == 2 {
-            if !current.is_empty() {
-                tokens.push(current);
-                current = String::new();
-            }
-            let mirrored = mirror_bracket(c);
-            let mut s = String::new();
-            s.push(mirrored);
-            tokens.push(s);
-            current_type = 0;
-            continue;
-        }
-
-        if current_type != t && !current.is_empty() {
-            tokens.push(current);
-            current = String::new();
-        }
-        current_type = t;
-        current.push(c);
-    }
-    if !current.is_empty() {
-        tokens.push(current);
-    }
-    tokens
-}
-
-/// Reorders Arabic words and runs for egui's left-to-right text layout.
-/// Words flow from right to left so that the first word sits on the right,
-/// while character glyphs within each word remain in logical order for
-/// native HarfBuzz cursive shaping and ligatures.
+/// Returns `text` in its logical character order for `epaint` 0.37's native `unicode-bidi` and
+/// `harfrust` pipeline. Keeping logical character indices intact guarantees that cursor hit-testing
+/// (`Galley::cursor_from_pos`) maps clicks on the first word of an Arabic sentence (visually on
+/// the right) to character indices `0..first_word_len` instead of the end of the sentence.
 pub fn shape_arabic(text: &str) -> String {
-    if !has_arabic(text) {
-        return text.to_string();
-    }
-
-    let mut result = String::with_capacity(text.len());
-    for (line_index, line) in text.split('\n').enumerate() {
-        if line_index > 0 {
-            result.push('\n');
-        }
-        if !has_arabic(line) {
-            result.push_str(line);
-            continue;
-        }
-        let mut tokens = tokenize_line(line);
-        tokens.reverse();
-        for tok in tokens {
-            result.push_str(&tok);
-        }
-    }
-    result
+    text.to_string()
 }
 
 #[cfg(test)]
@@ -283,10 +212,14 @@ mod tests {
     }
 
     #[test]
-    fn displays_arabic_name_in_visual_right_to_left_order() {
-        let text = "عمر وصفي ناصر";
+    fn preserves_logical_order_so_first_word_indices_match_editor_text() {
+        let text = "مرحبا بكم في التطبيق";
         let displayed = shape_arabic(text);
-        assert_eq!(displayed, "ناصر وصفي عمر");
+        assert_eq!(displayed, text);
+        // The first word "مرحبا" stays at logical character indices 0..5 so clicking it edits the
+        // first word, never the end of the sentence ("التطبيق").
+        let first_word: String = displayed.chars().take(5).collect();
+        assert_eq!(first_word, "مرحبا");
     }
 
     #[test]
@@ -295,17 +228,7 @@ mod tests {
         let displayed = shape_arabic(text);
         assert!(displayed.contains("Omar"));
         assert!(displayed.contains("42"));
-        assert_eq!(displayed, "42 Omar :الاسم");
-    }
-
-    #[test]
-    fn arabic_is_not_left_in_logical_order_for_egui() {
-        let text = "مرحبا بكم في التطبيق";
-        let displayed = shape_arabic(text);
-        assert_eq!(displayed, "التطبيق في بكم مرحبا");
-        let text2 = "مرحبا بالعالم";
-        let displayed2 = shape_arabic(text2);
-        assert_eq!(displayed2, "بالعالم مرحبا");
+        assert_eq!(displayed, text);
     }
 
     #[test]
